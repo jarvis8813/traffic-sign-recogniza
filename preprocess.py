@@ -4,10 +4,12 @@ from sklearn.utils import shuffle
 import skimage
 from skimage import exposure
 from skimage import io
+#import cv2
 from skimage.transform import rotate
 from skimage.transform import warp
 from skimage.transform import ProjectiveTransform
 import csv
+import random
 
 #load train_data
 def load_train_data(train_data_dir):
@@ -71,43 +73,6 @@ def preprocess_data(X, y = None):
     X = X.reshape(X.shape + (1,)) 
     return X, y
 
-
-
-def rotate(X, intensity):
-    for i in range(X.shape[0]):
-        delta = 30. * intensity # scale using augmentation intensity
-        X[i] = rotate(X[i], random.uniform(-delta, delta), mode = 'edge')
-    return X  
-
-def apply_projection_transform(X, intensity):
-    image_size = X.shape[1]
-    d = image_size * 0.3 * intensity
-    for i in range(X.shape[0]):
-        tl_top = random.uniform(-d, d)     # Top left corner, top margin
-        tl_left = random.uniform(-d, d)    # Top left corner, left margin
-        bl_bottom = random.uniform(-d, d)  # Bottom left corner, bottom margin
-        bl_left = random.uniform(-d, d)    # Bottom left corner, left margin
-        tr_top = random.uniform(-d, d)     # Top right corner, top margin
-        tr_right = random.uniform(-d, d)   # Top right corner, right margin
-        br_bottom = random.uniform(-d, d)  # Bottom right corner, bottom margin
-        br_right = random.uniform(-d, d)   # Bottom right corner, right margin
-
-        transform = ProjectiveTransform()
-        transform.estimate(np.array((
-                (tl_left, tl_top),
-                (bl_left, image_size - bl_bottom),
-                (image_size - br_right, image_size - br_bottom),
-                (image_size - tr_right, tr_top)
-            )), np.array((
-                (0, 0),
-                (0, image_size),
-                (image_size, image_size),
-                (image_size, 0)
-            )))
-        X[i] = warp(X[i], transform, output_shape=(image_size, image_size), order = 1, mode = 'edge')
-
-    return X
-
 def flip_extend(X, y):
     # Classes of signs that, when flipped horizontally, should still be classified as the same class
     self_flippable_horizontally = np.array([11, 12, 13, 15, 17, 18, 22, 26, 30, 35])
@@ -161,3 +126,79 @@ def flip_extend(X, y):
         y_extended = np.append(y_extended, np.full((X_extended.shape[0] - y_extended.shape[0]), c, dtype = int))
     
     return (X_extended, y_extended)
+
+
+def image_rotate(Xb,intensity):
+    """
+    Applies random rotation in a defined degrees range to a random subset of images. 
+    Range itself is subject to scaling depending on augmentation intensity.
+    """
+    delta = 30. * intensity # scale by self.intensity
+    Xb = rotate(Xb, random.uniform(-delta, delta), mode = 'edge')
+    return Xb   
+
+def apply_projection_transform(Xb,intensity):
+        """
+        Applies projection transform to a random subset of images. Projection margins are randomised in a range
+        depending on the size of the image. Range itself is subject to scaling depending on augmentation intensity.
+        """
+        image_size = Xb.shape[0]
+        d = image_size * 0.3 * intensity
+       
+        tl_top = random.uniform(-d, d)     # Top left corner, top margin
+        tl_left = random.uniform(-d, d)    # Top left corner, left margin
+        bl_bottom = random.uniform(-d, d)  # Bottom left corner, bottom margin
+        bl_left = random.uniform(-d, d)    # Bottom left corner, left margin
+        tr_top = random.uniform(-d, d)     # Top right corner, top margin
+        tr_right = random.uniform(-d, d)   # Top right corner, right margin
+        br_bottom = random.uniform(-d, d)  # Bottom right corner, bottom margin
+        br_right = random.uniform(-d, d)   # Bottom right corner, right margin
+
+        transform = ProjectiveTransform()
+        transform.estimate(np.array((
+                (tl_left, tl_top),
+                (bl_left, image_size - bl_bottom),
+                (image_size - br_right, image_size - br_bottom),
+                (image_size - tr_right, tr_top)
+            )), np.array((
+                (0, 0),
+                (0, image_size),
+                (image_size, image_size),
+                (image_size, 0)
+            )))
+        Xb = warp(Xb, transform, output_shape=(image_size, image_size), order = 1, mode = 'edge')
+
+        return Xb
+
+
+intensity = 0.7
+TRAIN_DATA = "./GTSRB_g" + "/Final_Training/Images"
+ROTATE_DATA = "./GTSRB_r" + "/Final_Training/Images"
+def rotate_data(train_data_dir,dst,intensity):
+    """Loads a data set and returns two lists:
+    
+    images: a list of Numpy arrays, each representing an image.
+    labels: a list of numbers that represent the images labels.
+    """
+    # Get all subdirectories of data_dir. Each represents a label.
+    directories = [d for d in os.listdir(train_data_dir) 
+                   if os.path.isdir(os.path.join(train_data_dir, d))]
+    for d in directories:
+        dst_dir = os.path.join(dst,d)
+        if not os.path.exists(dst_dir):
+            os.mkdir(dst_dir)
+        
+        label_dir = os.path.join(train_data_dir, d)
+
+        # For each label, load it's images and add them to the images list.
+        # And add the label number (i.e. directory name) to the labels list.
+        for f in os.listdir(label_dir):
+            if f.endswith(".ppm"):
+
+                image = skimage.io.imread(label_dir +'/' + f)
+                X = image_rotate(image,intensity)
+                X = apply_projection_transform(X,intensity)
+                skimage.io.imsave(dst_dir +'/'+ 'r_p' +str(intensity) +f  , X)
+
+
+#rotate_data(TRAIN_DATA,ROTATE_DATA,intensity)

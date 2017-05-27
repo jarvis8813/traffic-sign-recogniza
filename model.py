@@ -1,11 +1,12 @@
 from collections import namedtuple
 import tensorflow as tf
+from spatial_transformer import spatial_transformer_network
 
 Parameters = namedtuple('Parameters', [
         # Data parameters
         'num_classes', 'image_size', 
         # Training parameters
-        'batch_size', 'max_epochs', 'log_epoch', 'print_epoch',
+        'batch_size', 'start_epochs','max_epochs', 'log_epoch', 'print_epoch',
         # Optimisations
         'learning_rate_decay', 'learning_rate',
         'l2_reg_enabled', 'l2_lambda', 
@@ -70,9 +71,36 @@ def model_pass(input, params, is_training):
     -------
     Tensor with predicted logits.
     """
+    # in order to implement stn
+    # with tf.variable_scope('stn'):
+    #   with tf.variable_scope('conv1'):
+    #     stnconv1 = conv_relu(input, kernel_size = 5, depth = 32)
+    #     stnpool1 = pool(stnconv1, size = 2)
+    #   with tf.variable_scope('conv2'):
+    #     stnconv2 = conv_relu(stnpool1, kernel_size = 5, depth = 64)
+    #     stnpool2 = pool(stnconv2, size = 2)
+    #   with tf.variable_scope('fc1'):
+    #     stnflatten = tf.reshape(stnpool2, [-1,8*8*64])
+    #     fc1 = fully_connected_relu(stnflatten, size = 1024)
+    #   with tf.variable_scope('theta'):
+    #     theta = fully_connected(fc1, size = 6)
+    #   stn_out = spatial_transformer_network(input_fmap = input, theta = theta)
+
     # Convolutions
     with tf.variable_scope('conv1'):
-        conv1 = conv_relu(input, kernel_size = params.conv1_k, depth = params.conv1_d) 
+        # shape of stn is uncertain, so have to rewrite the net
+        weights = tf.get_variable( 'weights', 
+            shape = [params.conv1_k, params.conv1_k, 1, params.conv1_d],
+            initializer = tf.contrib.layers.xavier_initializer()
+          )
+        biases = tf.get_variable( 'biases',
+            shape = [params.conv1_d],
+            initializer = tf.constant_initializer(0.0)
+          )
+        conv = tf.nn.conv2d(input, weights,
+              strides = [1, 1, 1, 1], padding = 'SAME')
+        conv1 = tf.nn.relu(conv + biases) 
+
         pool1 = pool(conv1, size = 2)
         pool1 = tf.cond(is_training, lambda: tf.nn.dropout(pool1, keep_prob = params.conv1_p), lambda: pool1)
     with tf.variable_scope('conv2'):
@@ -88,17 +116,17 @@ def model_pass(input, params, is_training):
 
     # 1st stage output
     pool1 = pool(pool1, size = 4)
-    shape = pool1.get_shape().as_list()
-    pool1 = tf.reshape(pool1, [-1, shape[1] * shape[2] * shape[3]])
+    #shape = pool1.get_shape().as_list()
+    pool1 = tf.reshape(pool1, [-1, 4*4*32])
 
     # 2nd stage output
     pool2 = pool(pool2, size = 2)
-    shape = pool2.get_shape().as_list()
-    pool2 = tf.reshape(pool2, [-1, shape[1] * shape[2] * shape[3]])    
+    #shape = pool2.get_shape().as_list()
+    pool2 = tf.reshape(pool2, [-1, 4*4*64])    
 
     # 3rd stage output
-    shape = pool3.get_shape().as_list()
-    pool3 = tf.reshape(pool3, [-1, shape[1] * shape[2] * shape[3]])
+    #shape = pool3.get_shape().as_list()
+    pool3 = tf.reshape(pool3, [-1, 4*4*128])
 
     flattened = tf.concat([pool1, pool2, pool3],1)
 
@@ -136,7 +164,7 @@ def training(loss, params):
   # Create a variable to track the global step.
   global_step = tf.Variable(0, name='global_step', trainable=False)
   # Variables that affect learning rate.
-  decay_steps = 500
+  decay_steps = 100
   # Decay the learning rate exponentially based on the number of steps.
   lr = tf.train.exponential_decay(params.learning_rate,
                                   global_step,

@@ -11,12 +11,14 @@ import time
 import tensorflow as tf
 from preprocess import *
 from model import *
+from data_augment import *
 from sklearn.cross_validation import train_test_split
 
+
 #parameters
-ROOT_PATH = "./GTSRB_g"
-TRAIN_DATA = ROOT_PATH + "/Final_Training/Images"
-TEST_DATA = ROOT_PATH + "/Final_Test/Images"
+
+TRAIN_DATA = "./GTSRB_r" + "/Final_Training/Images"
+TEST_DATA = "./GTSRB_g" + "/Final_Test/Images"
 log_dir = "./log"
 
 index_in_epoch = 0
@@ -27,14 +29,14 @@ params = Parameters(
     image_size = (32, 32),
     # Training parameters
     batch_size = 256,
-    #start_epoch = 999,
-    max_epochs = 1500,
+    start_epochs = 2000,
+    max_epochs = 4000,
     log_epoch = 1,
     print_epoch = 1,
     # Optimisations
-    learning_rate_decay = 0.01,
+    learning_rate_decay = 0.8,
     learning_rate = 0.001,
-    l2_reg_enabled = False,
+    l2_reg_enabled = True,
     l2_lambda = 0.0001,
     early_stopping_enabled = False,
     early_stopping_patience = 100,
@@ -86,7 +88,7 @@ def do_eval(sess,
   precision = float(true_count) / num_examples
   print('  Num examples: %d  Num correct: %d  Precision @ 1: %0.04f' %
         (num_examples, true_count, precision))
-
+  return precision
 
 def run_training(restore_flag):
   X_train, y_train = load_train_data(TRAIN_DATA)
@@ -139,7 +141,7 @@ def run_training(restore_flag):
     # print('restored!!!!!!!!!!!')
     # Run the Op to initialize the variables.
     if restore_flag == True:
-      saver.restore(sess,log_dir+'/model.ckpt-999')
+      saver.restore(sess,log_dir+'/model.ckpt-1999')
       print('restored!!!!!!!!!!!')
     else:
       sess.run(init)
@@ -149,11 +151,14 @@ def run_training(restore_flag):
     global index_in_epoch
     index_in_epoch = 0
     # Start the training loop.
-    for step in xrange(1000,params.max_epochs):
+    for step in xrange(params.start_epochs,params.max_epochs):
       start_time = time.time()
 
       # Fill a feed dictionary with the actual set of images and labels
       X_batch , y_batch = data_nextbatch(X_train,y_train)
+      # implement data augmentation
+      #X_batch , y_batch = transform(X_batch,y_batch)
+
 
       feed_dict = {
         tf_x_batch : X_batch,
@@ -172,7 +177,7 @@ def run_training(restore_flag):
       duration = time.time() - start_time
 
       # Write the summaries and print an overview fairly often.
-      if step % 10 == 0:
+      if step % 20 == 0:
         # Print status to stdout.
         print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value, duration))
         # Update the events file.
@@ -185,12 +190,13 @@ def run_training(restore_flag):
         checkpoint_file = os.path.join(log_dir, 'model.ckpt')
         saver.save(sess, checkpoint_file, global_step=step)
         print('Training Data Eval:')
-        do_eval(sess,
+        precision = do_eval(sess,
                 eval_correct,
                 tf_x_batch,
                 tf_y_batch,
                 is_training,
                 X_train,y_train)
+        tf.summary.scalar('train precision',precision)
         # Evaluate against the validation set.
         print('Validation Data Eval:')
         do_eval(sess,
@@ -201,12 +207,13 @@ def run_training(restore_flag):
                 X_valid,y_valid)
         # Evaluate against the test set.
         print('Test Data Eval:')
-        do_eval(sess,
+        precision = do_eval(sess,
                 eval_correct,
                 tf_x_batch,
                 tf_y_batch,
                 is_training,
                 X_test,y_test)
+        tf.summary.scalar('test precision',precision)
 
 
 def main(_):
